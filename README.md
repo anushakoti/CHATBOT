@@ -37,9 +37,7 @@ dell-rag-project/
 
 ---
 
-#cd backend
-#py -3.12 -m pip install -r requirements.txt
-#py -3.12 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
 ## Quick Start
 
 ### 1. Prerequisites
@@ -76,6 +74,10 @@ pip install -r requirements.txt
 ```bash
 cd backend
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+#cd backend
+#py -3.12 -m pip install -r requirements.txt
+#py -3.12 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 The API will be available at `http://localhost:8000`.  
