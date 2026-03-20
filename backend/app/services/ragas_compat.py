@@ -1,4 +1,4 @@
-"""Compatibility layer for RAGAS with AWS Bedrock"""
+
 
 import asyncio
 from typing import Any, List, Optional
@@ -20,19 +20,19 @@ class AsyncCompatibleChatBedrock(BaseLLM):
     A wrapper that makes ChatBedrock compatible with async operations.
     """
     
-    # Use Any type to avoid Pydantic validation issues with ChatBedrock
+  
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
     chat_bedrock: Any = Field(description="The underlying ChatBedrock instance")
     
     def __init__(self, chat_bedrock: ChatBedrock):
-        # Call parent init with the field value
+    
         super().__init__(chat_bedrock=chat_bedrock)
     
     def _clean_ragas_response(self, content: str) -> str:
         """Clean and repair LLM output so RAGAS Pydantic models validate cleanly."""
         
-        # Strip markdown code fences
+  
         content = content.strip()
         if content.startswith("```json"):
             content = content[7:]
@@ -42,20 +42,20 @@ class AsyncCompatibleChatBedrock(BaseLLM):
             content = content[:-3]
         content = content.strip()
         
-        # Attempt to parse and patch missing verdict fields
+
         try:
             data = json.loads(content)
             
-            # Handle {"statements": [...]} structure RAGAS uses for faithfulness
+          
             if isinstance(data, dict) and "statements" in data:
                 for item in data["statements"]:
                     if isinstance(item, dict) and "verdict" not in item:
-                        item["verdict"] = 0  # Default: not supported
-                    # Also ensure reason exists
+                        item["verdict"] = 0  
+                   
                     if isinstance(item, dict) and "reason" not in item:
                         item["reason"] = "No reason provided"
             
-            # Handle flat list of statements
+         
             elif isinstance(data, list):
                 for item in data:
                     if isinstance(item, dict) and "verdict" not in item:
@@ -66,7 +66,7 @@ class AsyncCompatibleChatBedrock(BaseLLM):
             return json.dumps(data)
         
         except (json.JSONDecodeError, TypeError):
-            # If JSON is broken, return a safe fallback structure
+           
             logger.warning("Could not parse LLM JSON response, returning safe fallback")
             return json.dumps({"statements": []})
 
@@ -106,7 +106,7 @@ class AsyncCompatibleChatBedrock(BaseLLM):
         generations = []
         for resp in responses:
             content = resp.content if hasattr(resp, 'content') else str(resp)
-            content = self._clean_ragas_response(content)  # <-- clean here
+            content = self._clean_ragas_response(content)
             generations.append([Generation(text=content)])
         return LLMResult(generations=generations)
     

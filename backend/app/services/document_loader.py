@@ -1,12 +1,4 @@
-"""
-PDF extraction (text, tables, images) and LLM-based summarisation.
 
-Key design decisions vs. the notebook:
-- Images larger than settings.image_max_bytes are resized before encoding so
-  they never hit the Bedrock 5 MB limit.
-- All operations are async-friendly: CPU-heavy work is run in a thread pool
-  via asyncio.to_thread so FastAPI's event loop stays unblocked.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -28,12 +20,8 @@ from pypdf import PdfReader
 from app.config.settings import get_settings
 from app.services.models import get_llm
 
-# Heavy PDF libs are imported lazily inside extract_pdf_sync so tests
-# can import this module without requiring unstructured/pypdf system deps.
-
 logger = logging.getLogger(__name__)
 
-# ── Prompts ───────────────────────────────────────────────────────────────────
 
 TEXT_SUMMARY_PROMPT = PromptTemplate.from_template(
     "You are an assistant creating concise retrieval-optimised summaries of "
@@ -53,7 +41,6 @@ IMAGE_SUMMARY_PROMPT = (
 )
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _resize_image_bytes(data: bytes, max_bytes: int) -> bytes:
     """Down-scale an image until it fits under max_bytes (quality 85→50)."""
@@ -78,7 +65,6 @@ def _encode_bytes_b64(data: bytes) -> str:
     return base64.b64encode(data).decode("utf-8")
 
 
-# ── Extraction ────────────────────────────────────────────────────────────────
 
 def extract_pdf_sync(pdf_path: Path, img_dir: Path, settings) -> dict:
     """Blocking PDF extraction — call via asyncio.to_thread."""
@@ -92,7 +78,7 @@ def extract_pdf_sync(pdf_path: Path, img_dir: Path, settings) -> dict:
     all_tables: list[str] = []
     img_paths: list[Path] = []
 
-    # ── Text & tables ─────────────────────────────────────────────────────────
+   
     elements = partition_pdf(
         filename=str(pdf_path),
         extract_images_in_pdf=False,
@@ -119,7 +105,7 @@ def extract_pdf_sync(pdf_path: Path, img_dir: Path, settings) -> dict:
     all_texts.extend(splitter.split_text(" ".join(raw_texts)))
     all_tables.extend(raw_tables)
 
-    # ── Images ────────────────────────────────────────────────────────────────
+   
     reader = PdfReader(str(pdf_path))
     for page_num, page in enumerate(reader.pages):
         for img_key, img_obj in enumerate(page.images):
@@ -149,7 +135,6 @@ async def extract_pdf(pdf_path: Path, img_dir: Path) -> dict:
     return await asyncio.to_thread(extract_pdf_sync, pdf_path, img_dir, settings)
 
 
-# ── Summarisation ─────────────────────────────────────────────────────────────
 
 def build_summarise_chain():
     llm = get_llm()
@@ -219,7 +204,6 @@ async def summarise_images(img_paths: list[Path]) -> tuple[list[str], list[str]]
     return b64_list, summaries
 
 
-# ── DocumentLoader class ──────────────────────────────────────────────────────
 
 class DocumentLoader:
     """Handles PDF extraction and processing"""
@@ -230,7 +214,7 @@ class DocumentLoader:
         self.image_base_dir.mkdir(parents=True, exist_ok=True)
         self.llm = get_llm()
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1500,  # Default chunk size
+            chunk_size=1500,  
             chunk_overlap=300,
             separators=["\n\n", "\n", ".", " ", ""]
         )
@@ -248,18 +232,18 @@ class DocumentLoader:
         tables_out: List[Dict] = []
         images_out: List[Dict] = []
         
-        # Save temp file for processing
+        
         temp_path = self.image_base_dir / filename
         with open(temp_path, "wb") as f:
             f.write(file_content)
         
         try:
-            # Text & Tables via pdfplumber
+          
             with pdfplumber.open(temp_path) as pdf:
                 full_text_pages = []
                 
                 for pn, page in enumerate(pdf.pages, start=1):
-                    # Extract tables
+                 
                     for tbl in page.extract_tables() or []:
                         if tbl and len(tbl) > 1:
                             header = tbl[0]
@@ -279,12 +263,12 @@ class DocumentLoader:
                                 "type": "table",
                             })
                     
-                    # Page text
+             
                     txt = page.extract_text() or ""
                     if txt.strip():
                         full_text_pages.append((pn, txt))
                 
-                # Chunk text
+             
                 for chunk in self._chunk_text(full_text_pages):
                     chunk["source_pdf"] = pdf_name
                     texts_out.append(chunk)

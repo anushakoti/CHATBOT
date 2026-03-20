@@ -1,7 +1,4 @@
-"""
-Cached AWS Bedrock client, ChatBedrock LLM, and BedrockEmbeddings.
-All objects are created once per process via functools.lru_cache.
-"""
+
 from __future__ import annotations
 
 import logging
@@ -24,14 +21,14 @@ def get_bedrock_client():
         "Creating Bedrock runtime client — region=%s", settings.aws_default_region
     )
     
-    # Configure larger connection pool
+
     config = Config(
         region_name=settings.aws_default_region,
         retries={
             'max_attempts': 3,
             'mode': 'adaptive'
         },
-        max_pool_connections=50  # Increase from default 10
+        max_pool_connections=50 
     )
     
     return boto3.client(
@@ -68,7 +65,7 @@ def get_ragas_llm():
     logger.info("Building RAGAS LLM — model=%s, max_tokens=%d", 
                 settings.claude_model_id, ragas_max_tokens)
     
-    # Create base LLM
+
     base_llm = ChatBedrock(
     client=client,
     model_id=settings.claude_model_id,
@@ -84,7 +81,7 @@ def get_ragas_llm():
     },
 )
     
-    # Wrap with async compatibility
+  
     return AsyncCompatibleChatBedrock(base_llm)
 
 
@@ -99,7 +96,6 @@ def get_embeddings() -> BedrockEmbeddings:
     )
 
 
-# ── Model Manager ────────────────────────────────────────────────────────────
 
 class ModelManager:
     """Manager for Bedrock models"""
@@ -117,5 +113,5 @@ class ModelManager:
         return get_embeddings()
 
 
-# Global instance
+
 model_manager = ModelManager()

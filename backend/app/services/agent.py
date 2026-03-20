@@ -24,7 +24,7 @@ class CleanJsonLLM:
         if response is None:
             raise ValueError("LLM returned None response")
         
-        # Extract content from response
+
         if isinstance(response, str):
             content = response
         elif hasattr(response, 'content'):
@@ -34,13 +34,13 @@ class CleanJsonLLM:
         else:
             raise ValueError(f"Unexpected response type: {type(response)}")
         
-        # Clean the content (remove JSON code blocks)
+       
         if content.startswith('```json') and content.endswith('```'):
             content = content[7:-3].strip()
         elif content.startswith('```') and content.endswith('```'):
             content = content[3:-3].strip()
         
-        # Return the cleaned string - RAGAS expects a string
+       
         return content
     
     async def ainvoke(self, *args, **kwargs):
@@ -52,7 +52,7 @@ class CleanJsonLLM:
         """Make the class callable"""
         return self.invoke(*args, **kwargs)
     
-    # Delegate other attributes to the underlying LLM
+    
     def __getattr__(self, name):
         return getattr(self.llm, name)
 
@@ -61,21 +61,21 @@ class Orchestrator:
     
     def __init__(self):
         self.document_loader = DocumentLoader()
-        self.sessions = {}  # Simple in-memory session store
+        self.sessions = {} 
     
     async def ingest_pdf(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """
         Ingest a PDF file: extract, summarize, and index
         """
         try:
-            # Extract content
+        
             extracted = await self.document_loader.extract_pdf(file_content, filename)
             
             texts = extracted["texts"]
             tables = extracted["tables"]
             images = extracted["images"]
             
-            # Add to vector store (sync operation)
+        
             await vector_store_manager.add_documents(texts, tables, images)
             
             return {
@@ -97,7 +97,7 @@ class Orchestrator:
         if not session_id:
             session_id = str(uuid.uuid4())
         
-        # Initialize session if new
+   
         if session_id not in self.sessions:
             self.sessions[session_id] = {
                 "id": session_id,
@@ -106,11 +106,11 @@ class Orchestrator:
             }
         
         try:
-            # Get response from RAG (sync operation in thread pool)
+
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, rag_tool.query, message)
             
-            # Store in history with images
+           
             self.sessions[session_id]["history"].append({
                 "role": "user",
                 "content": message,
@@ -145,11 +145,11 @@ class Orchestrator:
         Evaluate RAG performance using RAGAS with AWS Bedrock
         """
         try:
-            # Set dummy OpenAI key to prevent RAGAS from failing on import
+           
             import os
             os.environ["OPENAI_API_KEY"] = "dummy"
             
-            # Import RAGAS modules
+     
             from ragas import evaluate
             from ragas.metrics import (
                 faithfulness,
@@ -162,30 +162,30 @@ class Orchestrator:
             from datasets import Dataset
             import pandas as pd
             
-            # Get the async-compatible Bedrock LLM and embeddings
-            bedrock_llm = model_manager.ragas_llm  # This is now async-compatible
+           
+            bedrock_llm = model_manager.ragas_llm  
             bedrock_embeddings = model_manager.embeddings
             
-            # Wrap with RAGAS's built-in wrappers
+     
             ragas_llm = LangchainLLMWrapper(bedrock_llm)
             ragas_embeddings = LangchainEmbeddingsWrapper(bedrock_embeddings)
             
-            # Configure metrics
+     
             faithfulness_metric = faithfulness
             answer_relevancy_metric = answer_relevancy
             context_precision_metric = context_precision
             context_recall_metric = context_recall
             
-            # Assign LLM and embeddings to metrics
+          
             faithfulness_metric.llm = ragas_llm
             answer_relevancy_metric.llm = ragas_llm
             answer_relevancy_metric.embeddings = ragas_embeddings
             context_precision_metric.llm = ragas_llm
             context_recall_metric.llm = ragas_llm
             
-            logger.info("✅ RAGAS metrics configured with AWS Bedrock")
+            logger.info("✅RAGAS metrics configured with AWS Bedrock")
             
-            # Prepare dataset
+       
             data = {
                 "question": questions,
                 "ground_truth": ground_truth,
@@ -193,25 +193,25 @@ class Orchestrator:
                 "contexts": []
             }
             
-            # Get answers and contexts
+           
             loop = asyncio.get_event_loop()
             for i, q in enumerate(questions):
                 logger.info(f"Processing question {i+1}/{len(questions)}: {q[:50]}...")
                 
-                # Get answer from RAG
+          
                 result = await loop.run_in_executor(None, rag_tool.query, q)
                 data["answer"].append(result["answer"])
                 
-                # Get full context docs
+               
                 docs = vector_store_manager.retriever.invoke(q)
                 contexts = [doc.page_content for doc in docs]
                 data["contexts"].append(contexts)
             
-            # Create dataset
+      
             logger.info("Creating evaluation dataset...")
             dataset = Dataset.from_dict(data)
             
-            # Run evaluation - now it can be called directly since our LLM is async-compatible
+          
             logger.info("Running RAGAS evaluation...")
             result = evaluate(
                 dataset,
@@ -223,16 +223,16 @@ class Orchestrator:
                 ]
             )
             
-            # Convert to DataFrame
+         
             df = result.to_pandas()
             
-            # Calculate average scores
+         
             faithfulness_score = df["faithfulness"].mean() if "faithfulness" in df.columns else 0
             answer_relevancy_score = df["answer_relevancy"].mean() if "answer_relevancy" in df.columns else 0
             context_precision_score = df["context_precision"].mean() if "context_precision" in df.columns else 0
             context_recall_score = df["context_recall"].mean() if "context_recall" in df.columns else 0
             
-            # Convert NaN to 0
+        
             faithfulness_score = 0 if pd.isna(faithfulness_score) else float(faithfulness_score)
             answer_relevancy_score = 0 if pd.isna(answer_relevancy_score) else float(answer_relevancy_score)
             context_precision_score = 0 if pd.isna(context_precision_score) else float(context_precision_score)
@@ -266,5 +266,5 @@ class Orchestrator:
         logger.info("Vector store cleared")
 
 
-# Global instance
+
 orchestrator = Orchestrator()

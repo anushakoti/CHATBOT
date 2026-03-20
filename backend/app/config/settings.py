@@ -1,7 +1,4 @@
-"""
-Application settings — all configuration via environment variables.
-Compatible with Python 3.12+ (uses pydantic-settings v2).
-"""
+
 from __future__ import annotations
 
 from functools import lru_cache

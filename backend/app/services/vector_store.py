@@ -1,10 +1,4 @@
-"""
-ChromaDB vector store + InMemoryStore docstore, combined into a
-custom MultiVectorRetriever.
 
-The retriever embeds *summaries* (text/table/image) and returns the
-corresponding *raw* content (text chunk, table string, or base64 image).
-"""
 from __future__ import annotations
 
 import logging
@@ -25,7 +19,7 @@ from app.services.models import get_embeddings
 logger = logging.getLogger(__name__)
 
 
-# ── Multi-vector retriever ────────────────────────────────────────────────────
+
 
 class MultiVectorRetriever(BaseRetriever):
     """Retrieve by summary similarity → return raw documents from docstore."""
@@ -48,13 +42,12 @@ class MultiVectorRetriever(BaseRetriever):
         raw_docs = self.docstore.mget(doc_ids)
         docs = [d for d in raw_docs if d is not None]
         if not docs:
-            # Fallback to summary docs if raw docs not found
+            
             docs = hits
         return docs
 
 
-# ── Singleton state (in-process) ─────────────────────────────────────────────
-# We keep a module-level reference so the retriever survives across requests.
+
 
 _vector_store: Chroma | None = None
 _docstore: InMemoryStore | None = None
@@ -73,9 +66,7 @@ def _get_or_create_vector_store() -> Chroma:
             persist_directory=str(settings.chroma_dir),
         )
 
-    # Chroma can sometimes end up with an uninitialized collection (e.g. if the
-    # underlying directory changed or the previous process aborted). In that case,
-    # accessing `_collection` raises ValueError and suggests calling `reset_collection()`.
+    
     try:
         _ = _vector_store._collection
     except ValueError:
@@ -118,7 +109,6 @@ def get_retriever_with_k(k: int) -> MultiVectorRetriever:
     )
 
 
-# ── Indexing ──────────────────────────────────────────────────────────────────
 
 def index_documents(
     raw_docs: list[Document],
@@ -148,7 +138,7 @@ def index_documents(
     summary_docs = []
     for i, s in enumerate(all_summaries):
         metadata = {"doc_id": doc_ids[i]}
-        # Copy all metadata from raw_doc for persistence
+       
         metadata.update(raw_docs[i].metadata)
         summary_docs.append(Document(page_content=s, metadata=metadata))
 
@@ -187,7 +177,7 @@ def reset_stores() -> None:
     logger.info("Stores reset.")
 
 
-# ── VectorStoreManager class ─────────────────────────────────────────────────
+
 
 class VectorStoreManager:
     """Manages ChromaDB vector store and multi-vector retriever"""
@@ -210,7 +200,7 @@ class VectorStoreManager:
     
     async def add_documents(self, texts: List[Dict], tables: List[Dict], images: List[Dict]):
         """Add documents to vector store"""
-        # Prepare raw docs and summaries
+  
         raw_docs = []
         summaries = []
         
@@ -226,7 +216,7 @@ class VectorStoreManager:
             ))
             summaries.append(text["content"][:1000])  # Truncate for summary
         
-        # Add tables
+
         for table in tables:
             raw_docs.append(Document(
                 page_content=table["content"],
@@ -238,7 +228,7 @@ class VectorStoreManager:
             ))
             summaries.append(table["content"][:1000])
         
-        # Add images
+ 
         for image in images:
             raw_docs.append(Document(
                 page_content=f"Image data: {image['content'][:200]}...",
@@ -253,7 +243,7 @@ class VectorStoreManager:
             ))
             summaries.append(f"[Image: {image.get('source_pdf', 'Unknown')} page {image.get('page', 0)}]")
         
-        # Index documents
+    
         count = index_documents(raw_docs, summaries)
         logger.info(f"Indexed {count} documents")
     
@@ -276,5 +266,5 @@ class VectorStoreManager:
         reset_stores()
 
 
-# Global instance
+
 vector_store_manager = VectorStoreManager()

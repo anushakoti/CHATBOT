@@ -22,7 +22,7 @@ class MultimodalRAG:
         self.retriever = vector_store_manager.retriever
         self._last_image_references = []
         
-        # Create prompt template with image awareness
+
         self.prompt = ChatPromptTemplate.from_messages([
     ("system", """You are a helpful assistant for Dell product documentation.
     
@@ -38,7 +38,7 @@ class MultimodalRAG:
             ("human", "{question}")
         ])
         
-        # Build RAG chain - NOT async
+   
         self.chain = (
             RunnablePassthrough.assign(context=self._get_context)
             | self.prompt
@@ -56,22 +56,21 @@ class MultimodalRAG:
             if not docs:
                 return "No relevant documents found."
             
-            # Limit to top 3 documents to avoid token limits
+      
             docs = docs[:10]
             
             formatted = []
-            self._last_image_references = []  # Reset image references
-            
+            self._last_image_references = [] 
             for i, doc in enumerate(docs):
                 logger.info(f"Context: Doc {i}: metadata keys: {list(doc.metadata.keys())}, content preview: {doc.page_content[:100]}")
                 source = f"[Source: {doc.metadata.get('source_pdf', 'Unknown')}, Page: {doc.metadata.get('page', 'Unknown')}]"
                 
-                # Handle different document types
+
                 if doc.metadata.get("type") == "image":
-                    # Get full image data if available
+                 
                     try:
                         if doc.metadata.get("full_content"):
-                            # Store image reference for later display
+                        
                             image_ref = {
                                 "index": i,
                                 "content": doc.metadata["full_content"],
@@ -82,7 +81,7 @@ class MultimodalRAG:
                             }
                             self._last_image_references.append(image_ref)
                             continue  
-                            #formatted.append(f"[IMAGE: {doc.metadata.get('source_pdf', 'Unknown')}, Page {doc.metadata.get('page', 'Unknown')}]\n{source}")
+                           
                         else:
                             formatted.append(f"[Image reference: {doc.metadata.get('source_pdf', 'Unknown')} page {doc.metadata.get('page', 'Unknown')}]\n{source}")
                     except Exception as e:
@@ -94,7 +93,7 @@ class MultimodalRAG:
             
             formatted = "\n\n".join(formatted)
             
-            # Limit context length to avoid token limits
+
             max_context_length = 20000
             if len(formatted) > max_context_length:
                 formatted = formatted[:max_context_length] + "..."
@@ -108,14 +107,14 @@ class MultimodalRAG:
     def query(self, question: str) -> Dict[str, Any]:
         """Process a query and return answer with sources and images"""
         try:
-            # Reset image references
+
             self._last_image_references = []
             
-            # Get relevant docs
+
             docs = self.retriever.invoke(question)
             logger.info(f"Query: Retrieved {len(docs)} documents for query: {question}")
             
-            # Prepare sources and collect images
+    
             sources = []
             images = []
             
@@ -128,7 +127,7 @@ class MultimodalRAG:
                     "type": doc.metadata.get("type", "text"),
                 }
                 
-                # Add full content reference if it's an image
+              
                 if doc.metadata.get("type") == "image" and doc.metadata.get("full_content"):
                     logger.info(f"Query: Found image document: {source_info}")
                     try:
@@ -145,11 +144,11 @@ class MultimodalRAG:
                     except Exception as e:
                         logger.error(f"Error retrieving full image: {e}")
                 
-                # Avoid duplicates
+      
                 if source_info not in sources:
                     sources.append(source_info)
             
-            # Generate answer
+      
             try:
                 answer = self.chain.invoke({"question": question})
             except Exception as e:
@@ -187,5 +186,5 @@ class MultimodalRAG:
         return formatted, result["images"]
 
 
-# Global instance
+
 rag_tool = MultimodalRAG()
