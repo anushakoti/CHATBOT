@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from functools import lru_cache
 from typing import Optional
 
 from langchain_chroma import Chroma
@@ -13,8 +12,7 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_core.stores import InMemoryStore
 from pydantic import ConfigDict
 
-from app.config.settings import get_settings
-from app.services.models import get_embeddings
+from app.core import get_settings, get_embeddings
 
 logger = logging.getLogger(__name__)
 
@@ -228,21 +226,49 @@ class VectorStoreManager:
             ))
             summaries.append(table["content"][:1000])
         
- 
-        for image in images:
-            raw_docs.append(Document(
-                page_content=f"Image data: {image['content'][:200]}...",
-                metadata={
-                    "source_pdf": image.get("source_pdf", "Unknown"),
-                    "page": image.get("page", 0),
-                    "type": "image",
-                    "full_content": image.get("content", ""),
-                    "width": image.get("width", 0),
-                    "height": image.get("height", 0)
-                }
-            ))
-            summaries.append(f"[Image: {image.get('source_pdf', 'Unknown')} page {image.get('page', 0)}]")
-        
+        # Add images
+        if images:
+            from langchain_core.messages import HumanMessage
+            from app.core import model_manager
+            
+            logger.info(f"Summarizing {len(images)} images for vector store...")
+            
+            for img in images:
+                # Generate summary for the image
+                try:
+                    # In Bedrock, we use the image_url structure for multi-modal
+                    prompt = [
+                        HumanMessage(content=[
+                            {"type": "text", "text": "Describe this image from a Dell manual in detail. Focus on technical components, ports, buttons, or diagrams. If it's a product image, describe the model. Provide a concise but comprehensive summary (max 100 words)."},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{img['content']}"}
+                            }
+                        ])
+                    ]
+                    
+                    logger.info(f"Invoking LLM for image summary on page {img.get('page')}")
+                    res = model_manager.llm.invoke(prompt)
+                    summary = res.content if hasattr(res, 'content') else str(res)
+                    logger.info(f"Image summary generated: {summary[:50]}...")
+                    
+                    raw_docs.append(Document(
+                        page_content=summary, # Use summary as the primary content for LLM use
+                        metadata={
+                            "source_pdf": img.get("source_pdf", "Unknown"),
+                            "page": img.get("page", 0),
+                            "type": "image",
+                            "width": img.get("width"),
+                            "height": img.get("height"),
+                            "image_data": img["content"], # Store base64 data in metadata instead
+                        }
+                    ))
+                    summaries.append(summary)
+                except Exception as e:
+                    logger.error(f"Failed to summarize image on page {img.get('page')}: {e}")
+                    continue
+        else:
+            logger.info("No images to index.")
     
         count = index_documents(raw_docs, summaries)
         logger.info(f"Indexed {count} documents")

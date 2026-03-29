@@ -1,43 +1,29 @@
-# Python
+# Python & Environment
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-*.egg
-.eggs/
-*.whl
-
-# Virtual environments
+*$py.class
 .venv/
 venv/
 env/
-
-# Secrets — NEVER commit
+backend/venv/
+frontend/venv/
 .env
-*.pem
-*.key
+backend/.env
 
-# Workspace (large binary/vector data)
+# Project specific
 workspace/
 backend/workspace/
+backend/app/workspace/
+temp/
 
-# IDE
-.idea/
+# IDE & OS
 .vscode/
-*.swp
-
-# OS
+.idea/
 .DS_Store
 Thumbs.db
+*.swp
 
-# Test artefacts
+# Testing & Coverage
 .pytest_cache/
 .coverage
 htmlcov/
-
-# Docker
-*.tar

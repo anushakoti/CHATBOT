@@ -1,39 +1,37 @@
 from typing import List, Dict, Any
 import logging
-import base64
-from io import BytesIO
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
-from app.services.models import model_manager
+from app.core import model_manager, get_settings
 from app.services.vector_store import vector_store_manager
 
 logger = logging.getLogger(__name__)
 
 
 class MultimodalRAG:
-    """Handles RAG chain construction and query processing with image support"""
+    """Handles RAG chain construction and query processing with image and reranking support"""
     
     def __init__(self):
         self.llm = model_manager.llm
         self.retriever = vector_store_manager.retriever
-        self._last_image_references = []
+        self.settings = get_settings()
         
 
         self.prompt = ChatPromptTemplate.from_messages([
-    ("system", """You are a helpful assistant for Dell product documentation.
+            ("system", """You are a helpful assistant for Dell product documentation and recommendations.
     
-        IMPORTANT: Answer ONLY using information explicitly present in the context below.
-        If the context does not contain enough information to answer, say:
-        "I don't have enough information in the provided documents to answer this."
-        Do NOT use any prior knowledge beyond what is in the context.
+        - Answer questions using information explicitly present in the context.
+        - If the context does not contain enough information to answer a factual question, say you don't have enough information.
+        - If the user asks for product recommendations, use the information in the context first. If no specific context is available for a recommendation, you may provide general helpful advice based on Dell's typical product lines (like XPS for high performance, Inspiron for general use, G-Series/Alienware for gaming) while mentioning that they should check the official Dell website for the latest models.
+        - When providing recommendations, be polite and helpful.
+        - If tables or images are relevant, mention them in your response.
 
         Context:
         {context}
-        ...
         """),
             ("human", "{question}")
         ])
@@ -46,54 +44,63 @@ class MultimodalRAG:
             | StrOutputParser()
         )
     
+    def _rerank_documents(self, question: str, docs: List[Document], k: int) -> List[Document]:
+        """Cohere Rerank or LLM-based reranking to improve precision"""
+        if not docs or len(docs) <= k:
+            return docs[:k]
+        
+        logger.info(f"Reranking {len(docs)} documents down to {k}...")
+        
+        # 1. Try Cohere Rerank (Recommended)
+        cohere_reranker = model_manager.cohere_reranker
+        if cohere_reranker:
+            try:
+                # Use langchain-cohere's compressor
+                # It accepts List[Document] and returns List[Document]
+                reranked = cohere_reranker.compress_documents(docs, question)
+                logger.info("Successfully reranked using Cohere.")
+                return reranked[:k]
+            except Exception as e:
+                logger.error(f"Cohere Rerank failed: {e}. Falling back to LLM-based rerank.")
+
+        # 2. Fallback to LLM-based reranking
+        # This is a simplified reranker that uses the LLM to select the best documents
+        rerank_prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are a reranking expert. Given a question and a list of documents, return the indices of the {k} most relevant documents as a comma-separated list of numbers (e.g., '0, 2, 5'). If fewer than {k} are relevant, return all relevant indices."),
+            ("human", "Question: {question}\n\nDocuments:\n{docs}")
+        ])
+        
+        docs_text = "\n".join([f"[{i}] {doc.page_content[:500]}" for i, doc in enumerate(docs)])
+        
+        try:
+            res = self.llm.invoke(rerank_prompt.format(question=question, docs=docs_text, k=k))
+            indices = [int(idx.strip()) for idx in res.content.split(",") if idx.strip().isdigit()]
+            reranked = [docs[i] for i in indices if i < len(docs)]
+            return reranked[:k] if reranked else docs[:k]
+        except Exception as e:
+            logger.error(f"LLM Reranking failed: {e}")
+            return docs[:k]
+
     def _get_context(self, input_dict: dict) -> str:
-        """Get formatted context for the chain"""
+        """Get formatted context for the chain with reranking"""
         question = input_dict.get("question", "")
         try:
+            # Step 1: Initial Retrieval (Fetch documents)
             docs = self.retriever.invoke(question)
-            logger.info(f"Retrieved {len(docs)} documents for query: {question}")
             
-            if not docs:
+            # Step 2: Reranking
+            reranked_docs = self._rerank_documents(question, docs, self.settings.rerank_k)
+            
+            if not reranked_docs:
                 return "No relevant documents found."
             
-      
-            docs = docs[:10]
-            
             formatted = []
-            self._last_image_references = [] 
-            for i, doc in enumerate(docs):
-                logger.info(f"Context: Doc {i}: metadata keys: {list(doc.metadata.keys())}, content preview: {doc.page_content[:100]}")
-                source = f"[Source: {doc.metadata.get('source_pdf', 'Unknown')}, Page: {doc.metadata.get('page', 'Unknown')}]"
-                
-
-                if doc.metadata.get("type") == "image":
-                 
-                    try:
-                        if doc.metadata.get("full_content"):
-                        
-                            image_ref = {
-                                "index": i,
-                                "content": doc.metadata["full_content"],
-                                "source_pdf": doc.metadata.get("source_pdf", "Unknown"),
-                                "page": doc.metadata.get("page", "Unknown"),
-                                "width": doc.metadata.get("width", 0),
-                                "height": doc.metadata.get("height", 0)
-                            }
-                            self._last_image_references.append(image_ref)
-                            continue  
-                           
-                        else:
-                            formatted.append(f"[Image reference: {doc.metadata.get('source_pdf', 'Unknown')} page {doc.metadata.get('page', 'Unknown')}]\n{source}")
-                    except Exception as e:
-                        logger.error(f"Error retrieving image: {e}")
-                        formatted.append(f"[Image reference: {doc.metadata.get('source_pdf', 'Unknown')} page {doc.metadata.get('page', 'Unknown')}]\n{source}")
-                else:
-                    content = doc.page_content
-                    formatted.append(f"{content}\n{source}")
+            for doc in reranked_docs:
+                # If it's an image, the page_content already contains the summary description
+                content = doc.page_content
+                formatted.append(f"{content}")
             
             formatted = "\n\n".join(formatted)
-            
-
             max_context_length = 20000
             if len(formatted) > max_context_length:
                 formatted = formatted[:max_context_length] + "..."
@@ -102,54 +109,40 @@ class MultimodalRAG:
         except Exception as e:
             logger.error(f"Error formatting docs: {e}")
             return "Error retrieving context. Please try again."
-            return "Error retrieving context."
     
     def query(self, question: str) -> Dict[str, Any]:
         """Process a query and return answer with sources and images"""
         try:
-
-            self._last_image_references = []
-            
-
             docs = self.retriever.invoke(question)
-            logger.info(f"Query: Retrieved {len(docs)} documents for query: {question}")
+            reranked_docs = self._rerank_documents(question, docs, self.settings.rerank_k)
             
-    
             sources = []
             images = []
             
-            for i, doc in enumerate(docs):
-                logger.info(f"Query: Processing doc {i}, metadata: {doc.metadata}")
-                
+            for doc in reranked_docs:
+                is_image = doc.metadata.get("type") == "image"
                 source_info = {
                     "source_pdf": doc.metadata.get("source_pdf", "Unknown"),
                     "page": doc.metadata.get("page", "Unknown"),
                     "type": doc.metadata.get("type", "text"),
+                    "has_image": is_image
                 }
                 
-              
-                if doc.metadata.get("type") == "image" and doc.metadata.get("full_content"):
-                    logger.info(f"Query: Found image document: {source_info}")
-                    try:
-                        image_data = {
-                            "content": doc.metadata["full_content"],
-                            "source_pdf": doc.metadata.get("source_pdf", "Unknown"),
-                            "page": doc.metadata.get("page", "Unknown"),
-                            "width": doc.metadata.get("width", 0),
-                            "height": doc.metadata.get("height", 0)
-                        }
-                        images.append(image_data)
-                        source_info["has_image"] = True
-                        logger.info(f"Query: Added image to results, total images: {len(images)}")
-                    except Exception as e:
-                        logger.error(f"Error retrieving full image: {e}")
-                
-      
                 if source_info not in sources:
                     sources.append(source_info)
+                
+                if is_image:
+                    images.append({
+                        "content": doc.metadata.get("image_data"), # Use metadata field instead
+                        "source_pdf": doc.metadata.get("source_pdf", "Unknown"),
+                        "page": doc.metadata.get("page", 0),
+                        "width": doc.metadata.get("width"),
+                        "height": doc.metadata.get("height"),
+                    })
             
-      
             try:
+                # To provide truly multimodal context, we can send images to the chain if needed
+                # For now, we'll just send the text/table context as formatted string
                 answer = self.chain.invoke({"question": question})
             except Exception as e:
                 logger.error(f"Chain invocation error: {e}")
@@ -172,7 +165,6 @@ class MultimodalRAG:
     def format_for_streamlit(self, question: str) -> tuple:
         """Format answer for Streamlit display with source citations"""
         result = self.query(question)
-        
         formatted = result["answer"]
         
         if result["sources"]:

@@ -1,9 +1,7 @@
 import streamlit as st
 import requests
-import json
-from datetime import datetime
 import os
-from typing import List, Dict, Any
+from typing import Dict, Any
 import pandas as pd
 import base64
 from PIL import Image
@@ -35,8 +33,6 @@ class DellChatbotUI:
         """Initialize session state variables"""
         if "messages" not in st.session_state:
             st.session_state.messages = []
-        if "session_id" not in st.session_state:
-            st.session_state.session_id = None
         if "uploaded_files" not in st.session_state:
             st.session_state.uploaded_files = []
         if "api_healthy" not in st.session_state:
@@ -258,7 +254,7 @@ class DellChatbotUI:
             )
             
             if uploaded_files:
-                if st.button("📄 Process Files", use_container_width=True):
+                if st.button("📄 Process Files", width="stretch"):
                     self.process_uploads(uploaded_files)
             
             st.divider()
@@ -288,18 +284,16 @@ class DellChatbotUI:
             
             # Controls
             st.subheader("⚙️ Controls")
-            if st.button("🧹 Clear Chat", use_container_width=True):
+            if st.button("🧹 Clear Chat", width="stretch"):
                 st.session_state.messages = []
-                st.session_state.session_id = None
                 st.rerun()
             
-            if st.button("🗑️ Clear All Data", use_container_width=True):
+            if st.button("🗑️ Clear All Data", width="stretch"):
                 if st.session_state.api_healthy:
                     try:
                         requests.post(f"{API_BASE_URL}/clear")
                         st.session_state.uploaded_files = []
                         st.session_state.messages = []
-                        st.session_state.session_id = None
                         st.success("✅ All data cleared")
                         st.rerun()
                     except:
@@ -352,7 +346,7 @@ class DellChatbotUI:
             
             # Display image
             st.image(image, caption=f"From: {image_data['source_pdf']} (Page {image_data['page']})", 
-                    use_container_width=True)
+                    width="stretch")
             
             # Add metadata
             st.caption(f"Size: {image_data['width']}x{image_data['height']} pixels")
@@ -383,24 +377,11 @@ class DellChatbotUI:
             
             # Show images for assistant messages
             if not is_user and "images" in message and message["images"]:
-                st.markdown("##### 🖼️ Images in Response")
-                cols = st.columns(min(3, len(message["images"])))
-                for idx, img_data in enumerate(message["images"]):
-                    with cols[idx % 3]:
-                        self.render_image(img_data)
-            
-            # Show sources for assistant messages
-            if not is_user and "sources" in message and message["sources"]:
-                with st.expander("📚 View Sources"):
-                    for source in message["sources"]:
-                        has_image_class = "has-image" if source.get("has_image") else ""
-                        st.markdown(f"""
-                        <div class="source-citation {has_image_class}">
-                            <strong>📄 {source['source_pdf']}</strong><br>
-                            📍 Page {source['page']} | Type: {source['type']}
-                            {f"<br>📷 Contains image" if source.get("has_image") else ""}
-                        </div>
-                        """, unsafe_allow_html=True)
+                with st.expander("🖼️ View Related Images", expanded=True):
+                    cols = st.columns(min(len(message["images"]), 2))
+                    for i, img in enumerate(message["images"]):
+                        with cols[i % 2]:
+                            self.render_image(img)
     
     def render_main_chat(self):
         """Render main chat interface with image support"""
@@ -435,7 +416,7 @@ class DellChatbotUI:
                             json={
                                 "question": prompt,
                                 "k": 6,
-                                "include_sources": True
+                                "include_sources": False
                             }
                         )
                         
@@ -501,7 +482,7 @@ class DellChatbotUI:
             with col2:
                 ground_truth.append(st.text_input(f"Expected Answer {i+1}", value=a, key=f"a_{i}"))
         
-        if st.button("🚀 Run Evaluation", type="primary", use_container_width=True):
+        if st.button("🚀 Run Evaluation", type="primary", width="stretch"):
             with st.spinner("Running evaluation... This may take a minute"):
                 try:
                     response = requests.post(
@@ -529,25 +510,47 @@ class DellChatbotUI:
                         # Individual scores
                         st.subheader("📋 Individual Scores")
                         if results.get("individual_scores"):
-                            df = pd.DataFrame(results["individual_scores"])
-                            st.dataframe(df, use_container_width=True)
+                            if "error" in results["individual_scores"][0]:
+                                st.error(results["individual_scores"][0]["error"])
+                            else:
+                                df = pd.DataFrame(results["individual_scores"])
+                                st.dataframe(df, width="stretch")
                     else:
                         st.error(f"❌ Evaluation failed: {response.text}")
                 except Exception as e:
                     st.error(f"❌ Evaluation error: {str(e)}")
-    
+
     def run(self):
         """Main entry point"""
         self.render_sidebar()
         
         # Main content
-        tabs = st.tabs(["💬 Chat", "📊 Evaluate"])
+        tabs = st.tabs(["💬 Chat", "📊 Evaluation", "ℹ️ About"])
         
         with tabs[0]:
             self.render_main_chat()
         
         with tabs[1]:
             self.render_evaluation_tab()
+
+        with tabs[2]:
+            st.header("About Dell Assistant")
+            st.markdown("""
+            This AI Assistant is designed to help you with Dell product documentation.
+            
+            **Features:**
+            - 📄 **PDF Processing**: Upload multiple Dell manuals or specification sheets.
+            - 💬 **Smart Chat**: Ask questions in natural language about the documents.
+            - 🖼️ **Visual Support**: The assistant can find and display relevant images and tables from the PDFs.
+            - 💻 **Product Recommendations**: Get advice on which Dell products best suit your needs.
+            - 🚀 **Reranking**: Improved retrieval accuracy using advanced reranking.
+            - 📊 **Evaluation**: Built-in RAGAS evaluation to measure performance.
+            
+            **How to use:**
+            1. Upload one or more PDF files using the sidebar.
+            2. Click "Process Files" and wait for indexing to complete.
+            3. Start chatting or run an evaluation!
+            """)
 
 
 if __name__ == "__main__":
