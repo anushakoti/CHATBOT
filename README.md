@@ -1,6 +1,6 @@
-# Dell Multimodal RAG — AI Assistant
+# langchain-doc-chat — AI Assistant
 
-A simplified, high-performance **Multimodal Retrieval-Augmented Generation (RAG)** system for Dell product documentation, powered by AWS Bedrock (Claude + Titan Embeddings), ChromaDB, and LangChain.
+A simplified, high-performance **Multimodal Retrieval-Augmented Generation (RAG)** system for product documentation, powered by AWS Bedrock (Claude + Titan Embeddings), ChromaDB, and LangChain.
 
 ---
 
@@ -10,14 +10,14 @@ A simplified, high-performance **Multimodal Retrieval-Augmented Generation (RAG)
 - 🖼️ **Visual RAG**: The assistant retrieves and displays relevant images and tables from the documentation alongside text answers.
 - 🚀 **Advanced Reranking**: Uses Cohere Rerank (with LLM-based fallback) to improve retrieval precision and answer quality.
 - 📊 **RAGAS Evaluation (Optional)**: Built-in evaluation pipeline to measure Faithfulness, Answer Relevancy, Context Precision, and Context Recall. Note: Requires `ragas` and `datasets` which may need C++ Build Tools on Windows.
-- 💻 **Product Recommendations**: Capable of recommending Dell products based on user needs and documentation context.
+- 💻 **Product Recommendations**: Capable of recommending  products based on user needs and documentation context.
 
 ---
 
 ## Architecture
 
 ```
-DELL chatbot/
+langchain-doc-chat/
 ├── backend/
 │   ├── app/
 │   │   ├── core.py                  ← Consolidated Settings, Schemas, and Model initialization
@@ -96,7 +96,7 @@ Open `http://localhost:8501` in your browser.
 
 ## How it Works
 
-1. **Ingestion**: Upload Dell PDF manuals. The system extracts text chunks, parses tables into markdown, and saves images.
+1. **Ingestion**: Upload PDF manuals. The system extracts text chunks, parses tables into markdown, and saves images.
 2. **Indexing**: Summaries and metadata are stored in ChromaDB using Titan Embeddings.
 3. **Retrieval & Reranking**: When a user asks a question, the system retrieves the top $N$ candidates and then uses Cohere Rerank (or an LLM fallback) to rerank them for the best possible match.
 4. **Generation**: Claude generates a comprehensive answer using the reranked context, including image references which the frontend renders as actual images.
@@ -121,7 +121,7 @@ docker compose logs -f
 Liveness check. Returns service status, model IDs, and indexed document count.
 
 ### `POST /ingest`
-Upload one or more Dell brochure PDFs.
+Upload one or more brochure PDFs.
 
 **Form data:**
 | Field | Type | Description |
@@ -149,7 +149,7 @@ Ask a question. Returns a multimodal-grounded answer.
 **Request body:**
 ```json
 {
-  "question": "Which Dell Pro laptop supports 5G and is the lightest?",
+  "question": "Which Pro laptop supports 5G and is the lightest?",
   "k": 6,
   "include_sources": false
 }
